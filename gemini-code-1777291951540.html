@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>教务云系统 V14.1</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        :root { 
+            --primary: #1a73e8; --comp: #d93025; --level3: #f29900; --level2: #1e8e3e; --level1: #03a9f4;
+            --stats: #673ab7; --areaA: #e91e63; --areaBD: #00bcd4; --bg: #f0f2f5;
+        }
+        body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); margin: 0; padding: 0; color: #333; overflow-x: hidden; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 15px; box-sizing: border-box; }
+        .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 15px; }
+        
+        #loader { text-align: center; padding: 60px 0; }
+        .spinner { border: 4px solid rgba(0,0,0,0.1); border-left-color: var(--primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 15px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .main-layout { display: flex; flex-direction: column; gap: 15px; }
+        @media (min-width: 1025px) {
+            .container { padding: 30px; }
+            .main-layout { display: grid; grid-template-columns: 280px 1fr; gap: 30px; }
+            .sidebar { position: sticky; top: 20px; }
+        }
+
+        .sidebar-group { margin-bottom: 20px; padding: 10px; background: #fff; border-radius: 10px; border: 1px solid #eee; }
+        .group-title { font-size: 11px; color: #888; margin-bottom: 10px; font-weight: bold; border-left: 4px solid #ccc; padding-left: 8px; }
+        .sidebar-btn { padding: 12px; border: 1px solid #f0f0f0; border-radius: 8px; cursor: pointer; font-weight: 500; background: #fff; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 14px; transition: 0.2s; }
+
+        /* 激活状态：修正了激活时数字标签的背景颜色 */
+        .active[data-val="起点区"] { background: var(--areaA) !important; color: white; }
+        .active[data-val="直升区"] { background: var(--areaBD) !important; color: white; }
+        .active[data-val="0"] { background: var(--comp) !important; color: white; }
+        .active[data-val="Ⅲ"] { background: var(--level3) !important; color: white; }
+        .active[data-val="Ⅱ"] { background: var(--level2) !important; color: white; }
+        .active[data-val="Ⅰ"] { background: var(--level1) !important; color: white; }
+        
+        /* 统计按钮激活逻辑：加强对比 */
+        .active.stats-btn { background: var(--stats) !important; color: white !important; }
+        .active .badge { background: rgba(255,255,255,0.3) !important; color: white !important; }
+        
+        .active[data-val="ALL"] { background: #555 !important; color: white; }
+
+        .search-input { width: 100%; padding: 15px; border: 2px solid #eee; border-radius: 10px; margin-bottom: 15px; font-size: 16px; box-sizing: border-box; outline: none; }
+        .sub-nav { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 15px; }
+        .sub-item { padding: 6px 12px; border-radius: 15px; cursor: pointer; border: 1px solid #ddd; background: #fff; font-size: 12px; }
+        .sub-item.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+        .class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+        .item-card { padding: 12px; border: 1px solid #eef0f2; border-radius: 8px; cursor: pointer; background: #fff; text-align: center; font-size: 13px; }
+
+        @media (max-width: 768px) {
+            .name-grid { grid-template-columns: repeat(4, 1fr) !important; gap: 4px !important; }
+            .name-card { padding: 6px 2px !important; font-size: 11px !important; height: 32px; display: flex; align-items: center; justify-content: center; }
+            #resCard { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; padding-top: 50px; background: white; overflow-y: auto; box-sizing: border-box; }
+            .close-btn { position: fixed; top: 10px; right: 10px; z-index: 1001; padding: 8px 15px; background: #333; color: #fff; border-radius: 20px; border:none; }
+        }
+
+        .table-container { width: 100%; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 400px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+        .badge { font-size: 10px; background: #f0f0f0; padding: 1px 6px; border-radius: 10px; color: #666; transition: 0.2s; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div id="loader" class="card">
+            <div class="spinner"></div>
+            <h3 id="loadText">同步云端 Gist 数据中...</h3>
+        </div>
+
+        <div class="main-layout" id="app" style="display:none;">
+            <div class="sidebar">
+                <div class="sidebar-group">
+                    <div class="group-title">生源区域</div>
+                    <div class="sidebar-btn active" data-type="area" data-val="ALL" onclick="setArea('ALL', this)">全部区域<span>-</span></div>
+                    <div class="sidebar-btn" data-type="area" data-val="起点区" onclick="setArea('起点区', this)">起点区<span>A</span></div>
+                    <div class="sidebar-btn" data-type="area" data-val="直升区" onclick="setArea('直升区', this)">直升区<span>BD</span></div>
+                </div>
+                <div class="sidebar-group">
+                    <div class="group-title">层级筛选</div>
+                    <div class="sidebar-btn" data-type="lv" data-val="0" onclick="setLv('0', this)">竞赛班 (0)</div>
+                    <div class="sidebar-btn" data-type="lv" data-val="Ⅲ" onclick="setLv('Ⅲ', this)">三层 (Ⅲ)</div>
+                    <div class="sidebar-btn" data-type="lv" data-val="Ⅱ" onclick="setLv('Ⅱ', this)">二层 (Ⅱ)</div>
+                    <div class="sidebar-btn" data-type="lv" data-val="Ⅰ" onclick="setLv('Ⅰ', this)">一层 (Ⅰ)</div>
+                </div>
+                <div class="sidebar-group">
+                    <div class="group-title">三层课去重统计</div>
+                    <div id="statsPanel"></div>
+                </div>
+            </div>
+
+            <div class="main-content">
+                <div class="card">
+                    <input type="text" class="search-input" id="nameInput" placeholder="🔍 姓名搜索并回车..." onkeypress="if(event.keyCode==13) doSearch()">
+                    <div class="sub-nav" id="subTabs"></div>
+                    <div id="filterLabel" style="font-size: 11px; color: #999; margin-bottom: 10px;"></div>
+                    <div class="class-grid" id="mainDisplay"></div>
+                </div>
+                <div class="card" id="resCard" style="display:none;">
+                    <button class="close-btn" onclick="closeRes()">关闭返回</button>
+                    <div id="resBox"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const GIST_URL = "https://gist.githubusercontent.com/penappleapplepie-del/061adfa758d4f60d399f8ff0dabe490a/raw/c637434f36f69e40354d9e114a2a936593e90276/gistfile1.txt";
+    
+    let db_students = {}, db_classes = {}, student_info = {};
+    let cur_area = 'ALL', cur_lv = 'ALL', cur_sub = '全部', cur_stat_num = null, filter_mode = 'class';
+    const subList = ["全部", "语文", "数学", "英语", "物理", "化学", "生物", "政治", "历史", "地理"];
+
+    window.onload = function() {
+        Papa.parse(GIST_URL, {
+            download: true,
+            header: false,
+            skipEmptyLines: true,
+            complete: function(results) {
+                initData(results.data);
+                document.getElementById('loader').style.display = 'none';
+                document.getElementById('app').style.display = window.innerWidth < 1025 ? 'block' : 'grid';
+                renderSubs();
+                refreshAll();
+            },
+            error: function() {
+                document.getElementById('loadText').innerHTML = `<span style="color:red;">同步失败</span>`;
+            }
+        });
+    };
+
+    function initData(rows) {
+        db_students = {}; db_classes = {}; student_info = {};
+        rows.forEach(row => {
+            const name = row[0]?.trim(); if (!name || name === "姓名") return;
+            db_students[name] = []; let uniqueSet = new Set(), hasA = false, hasBD = false;
+            for (let i = 2; i < row.length; i += 2) {
+                const c = row[i]?.trim(); const r = row[i+1]?.trim() || "-";
+                if (c && !c.includes('自习')) {
+                    db_students[name].push({c, r});
+                    if (c.includes('A')) hasA = true; if (c.includes('B') || c.includes('D')) hasBD = true;
+                    if (!uniqueSet.has(c)) {
+                        if (!db_classes[c]) db_classes[c] = [];
+                        db_classes[c].push({name, r}); uniqueSet.add(c);
+                    }
+                }
+            }
+            let area = hasA && !hasBD ? "起点区" : (!hasA && hasBD ? "直升区" : "混合");
+            let lv3 = 0; uniqueSet.forEach(cn => { if (cn.includes('Ⅲ')) lv3++; });
+            student_info[name] = { area, lv3 };
+        });
+    }
+
+    function renderStatsBtns() {
+        const list = Object.keys(student_info).filter(n => cur_area === 'ALL' || student_info[n].area === cur_area);
+        const counts = {}; list.forEach(n => counts[student_info[n].lv3] = (counts[student_info[n].lv3] || 0) + 1);
+        const color = cur_area === '起点区' ? 'var(--areaA)' : (cur_area === '直升区' ? 'var(--areaBD)' : '#eee');
+        document.getElementById('statsPanel').innerHTML = [0,1,2,3,4,5,6].map(i => `
+            <div class="sidebar-btn stats-btn ${filter_mode==='stats'&&cur_stat_num===i?'active':''}" 
+                 style="border-left:4px solid ${color}" onclick="setStats(${i}, this)">
+                ${i}门 <span class="badge">${counts[i]||0}人</span>
+            </div>`).join('');
+    }
+
+    function renderSubs() {
+        document.getElementById('subTabs').innerHTML = subList.map(s => `<div class="sub-item ${s===cur_sub?'active':''}" onclick="setSub('${s}')">${s}</div>`).join('');
+    }
+
+    function setArea(v, el) { cur_area = v; document.querySelectorAll('[data-type="area"]').forEach(b => b.classList.remove('active')); el.classList.add('active'); refreshAll(); }
+    function setLv(v, el) { cur_lv = v; filter_mode = 'class'; cur_stat_num = null; document.querySelectorAll('[data-type="lv"], .stats-btn').forEach(b => b.classList.remove('active')); el.classList.add('active'); refreshAll(); }
+    function setStats(n, el) { cur_stat_num = n; filter_mode = 'stats'; cur_lv = 'ALL'; document.querySelectorAll('[data-type="lv"], .stats-btn').forEach(b => b.classList.remove('active')); el.classList.add('active'); refreshAll(); }
+    function setSub(s) { cur_sub = s; renderSubs(); refreshAll(); }
+
+    function refreshAll() {
+        renderStatsBtns();
+        const box = document.getElementById('mainDisplay');
+        box.innerHTML = "";
+        box.className = filter_mode === 'stats' ? "class-grid name-grid" : "class-grid";
+        if (filter_mode === 'class') {
+            Object.keys(db_classes).filter(cn => {
+                const sM = cur_sub === '全部' || (cur_sub === '政治' ? cn.includes('政治') : cn.includes(cur_sub));
+                const lM = cur_lv === 'ALL' || (cur_lv === '0' ? /(?<![1-9])0/.test(cn) : cn.includes(cur_lv));
+                return sM && lM;
+            }).sort((a,b)=>a.localeCompare(b,'zh')).forEach(cn => {
+                const list = db_classes[cn].filter(s => cur_area === 'ALL' || student_info[s.name].area === cur_area);
+                if (list.length > 0) box.innerHTML += `<div class="item-card" onclick="showResult('class', '${cn}')"><strong>${cn}</strong><br><small>${list.length}人</small></div>`;
+            });
+        } else {
+            Object.keys(student_info).filter(n => (cur_area==='ALL'||student_info[n].area===cur_area) && student_info[n].lv3===cur_stat_num)
+                .sort((a,b)=>a.localeCompare(b,'zh')).forEach(n => {
+                    const c = student_info[n].area === '起点区' ? 'var(--areaA)' : 'var(--areaBD)';
+                    box.innerHTML += `<div class="item-card name-card" onclick="showResult('student', '${n}')"><b style="color:${c}">${n}</b></div>`;
+                });
+        }
+        document.getElementById('filterLabel').innerText = `已选：${cur_area} | ${filter_mode==='class'?cur_lv:cur_stat_num+'门'}`;
+    }
+
+    function doSearch() { const n = document.getElementById('nameInput').value.trim(); if (n) showResult('student', n); }
+
+    function showResult(type, key) {
+        const c = document.getElementById('resCard'), b = document.getElementById('resBox');
+        c.style.display = 'block';
+        if(window.innerWidth < 1025) document.body.style.overflow = 'hidden';
+        let h = "";
+        if (type === 'class') {
+            const list = db_classes[key].filter(s => cur_area === 'ALL' || student_info[s.name].area === cur_area);
+            h = `<h3>班级：${key} (${list.length}人)</h3><div class="table-container"><table><tr><th>姓名</th><th>区域</th><th>三层</th></tr>` + 
+                list.map(s => `<tr><td><b>${s.name}</b></td><td>${student_info[s.name].area}</td><td>${student_info[s.name].lv3}门</td></tr>`).join('') + "</table></div>";
+        } else {
+            const l = db_students[key], info = student_info[key]; if(!l) return;
+            h = `<h3>${key} [${info.area}]</h3><div class="table-container"><table><tr><th>课程</th><th>教室</th></tr>` + 
+                l.map(x => `<tr><td style="${x.c.includes('Ⅲ')?'color:var(--level3);font-weight:bold':''}">${x.c}</td><td>${x.r}</td></tr>`).join('') + "</table></div>";
+        }
+        b.innerHTML = h;
+    }
+
+    function closeRes() {
+        document.getElementById('resCard').style.display = 'none';
+        document.body.style.overflow = 'auto';
+    }
+</script>
+</body>
+</html>
